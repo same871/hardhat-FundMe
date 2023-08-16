@@ -12,6 +12,7 @@ const { developmentChains } = require("../../helper-hardhat-config")
           beforeEach(async () => {
               // const accounts = await ethers.getSigners()
               // deployer = accounts[0]
+              console.log("Before Each")
               deployer = (await getNamedAccounts()).deployer
               await deployments.fixture(["all"])
               fundMe = await ethers.getContract("FundMe", deployer)

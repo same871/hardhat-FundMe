@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
-// 1. Pragma
 pragma solidity ^0.8.7;
+
 // 2. Imports
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 import "./PriceConverter.sol";
 
 // 3. Interfaces, Libraries, Contracts
 error FundMe__NotOwner();
+error FundMe__NoFundsToWithdraw();
+error FundMe__InsufficientFund();
 
-/**@title A sample Funding Contract
+/**
+ * @title A sample Funding Contract
  * @author Patrick Collins
  * @notice This contract is for creating a sample funding contract
  * @dev This implements price feeds as our library
@@ -18,13 +21,11 @@ contract FundMe {
     using PriceConverter for uint256;
 
     // State variables
-    uint256 public constant MINIMUM_USD = 50 * 10 ** 18;
+    uint256 public constant MINIMUM_USD = 50 ether;
     address private immutable i_owner;
     address[] private s_funders;
     mapping(address => uint256) private s_addressToAmountFunded;
     AggregatorV3Interface private s_priceFeed;
-
-    // Events (we have none!)
 
     // Modifiers
     modifier onlyOwner() {
@@ -33,72 +34,55 @@ contract FundMe {
         _;
     }
 
-    // Functions Order:
-    //// constructor
-    //// receive
-    //// fallback
-    //// external
-    //// public
-    //// internal
-    //// private
-    //// view / pure
-
     constructor(address priceFeed) {
         s_priceFeed = AggregatorV3Interface(priceFeed);
         i_owner = msg.sender;
     }
 
     /// @notice Funds our contract based on the ETH/USD price
-    function fund() public payable {
-        require(
-            msg.value.getConversionRate(s_priceFeed) >= MINIMUM_USD,
-            "You need to spend more ETH!"
-        );
-        // require(PriceConverter.getConversionRate(msg.value) >= MINIMUM_USD, "You need to spend more ETH!");
-        s_addressToAmountFunded[msg.sender] += msg.value;
+    function fund() external payable {
+        if(msg.value.getConversionRate(s_priceFeed) >= MINIMUM_USD){
+            revert FundMe__InsufficientFund();
+        }
         s_funders.push(msg.sender);
+        s_addressToAmountFunded[msg.sender] += msg.value;
     }
 
-    function withdraw() public onlyOwner {
-        for (
-            uint256 funderIndex = 0;
-            funderIndex < s_funders.length;
-            funderIndex++
-        ) {
+    function withdraw() external onlyOwner {
+        if (address(this).balance <= 0) {
+            revert FundMe__NoFundsToWithdraw();
+        }
+        for (uint256 funderIndex = 0; funderIndex < s_funders.length; funderIndex++) {
             address funder = s_funders[funderIndex];
             s_addressToAmountFunded[funder] = 0;
         }
         s_funders = new address[](0);
-        // Transfer vs call vs Send
-        // payable(msg.sender).transfer(address(this).balance);
-        (bool success, ) = i_owner.call{value: address(this).balance}("");
+        (bool success,) = i_owner.call{value: address(this).balance}("");
         require(success);
     }
 
-    function cheaperWithdraw() public onlyOwner {
+    function cheaperWithdraw() external onlyOwner {
+        if (address(this).balance <= 0) {
+            revert FundMe__NoFundsToWithdraw();
+        }
+
         address[] memory funders = s_funders;
-        // mappings can't be in memory, sorry!
-        for (
-            uint256 funderIndex = 0;
-            funderIndex < funders.length;
-            funderIndex++
-        ) {
+
+        for (uint256 funderIndex = 0; funderIndex < funders.length; funderIndex++) {
             address funder = funders[funderIndex];
             s_addressToAmountFunded[funder] = 0;
         }
         s_funders = new address[](0);
-        // payable(msg.sender).transfer(address(this).balance);
-        (bool success, ) = i_owner.call{value: address(this).balance}("");
+        (bool success,) = i_owner.call{value: address(this).balance}("");
         require(success);
     }
 
-    /** @notice Gets the amount that an address has funded
+    /**
+     * @notice Gets the amount that an address has funded
      *  @param fundingAddress the address of the funder
      *  @return the amount funded
      */
-    function getAddressToAmountFunded(
-        address fundingAddress
-    ) public view returns (uint256) {
+    function getAddressToAmountFunded(address fundingAddress) public view returns (uint256) {
         return s_addressToAmountFunded[fundingAddress];
     }
 
